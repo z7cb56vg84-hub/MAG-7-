@@ -1,42 +1,39 @@
 ---
-name: gamma-daily
-description: Daily Mag 7 gamma-level scan; refresh best 2-3 call/put picks on the options watchlist (weekdays ~10am ET)
-schedule: "0 8 * * 1-5"
+name: mag7-gex
+description: Daily Mag 7 gamma scan; refresh 2-3 toward-the-pin call/put picks on the options watchlist (weekdays 10am ET)
+schedule: "0 10 * * 1-5"
+connectors: [Robinhood, FMP]
 ---
 
-You are running the automated "Gamma Daily" options-watchlist task. Each run is a FRESH session with no memory of prior runs — everything you need is below.
+You are running the automated "MAG7 GEX" gamma watchlist routine. Each run is a fresh session with no memory of prior runs — everything you need is below. Available connectors: Robinhood (options data + watchlist) and FMP (market data).
 
 OBJECTIVE
-Scan gamma-exposure levels for the Magnificent 7, select the 2-3 best single-leg option contracts (calls or puts) using the distance-from-pin / gamma-regime rule below, and REFRESH them onto the user's Robinhood options watchlist so it always shows today's top gamma plays. Watchlist-only — never place trades.
+Scan gamma-exposure levels for the Magnificent 7, select the 2-3 best single-leg option contracts that play a move TOWARD the gamma pin, and refresh them onto the Robinhood options watchlist. Watchlist-only — NEVER place trades.
 
 MAG 7 TICKERS: AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA
 
-TOOLS
-- Market/options data: the "Massive Market Data" MCP tools and the Robinhood MCP option tools (get_equity_quotes, get_option_chains, get_option_instruments, get_option_quotes, get_option_historicals). Use get_option_instruments to obtain the option_id UUIDs needed for the watchlist.
-- Watchlist writes: add_option_to_watchlist and remove_option_from_watchlist (these target the user's single global OPTIONS watchlist; position_type "long"). get_option_watchlist lists current contracts.
-- State: read/write the local file at ~/.claude/scheduled-tasks/gamma-daily/state/last_option_ids.json (create the state/ folder if missing).
-
 STEPS
 1. Trading-day check: confirm US equity markets are open today (skip weekends and market holidays). If closed, do nothing and report that you skipped.
-2. For each Mag 7 ticker, get the current underlying price and the near-dated option chain (nearest weekly expiration; use ~0-5 DTE consistent with a same-day-to-few-day horizon). Collect strikes, gamma, open interest, volume, bid/ask, and IV.
+2. For each Mag 7 ticker, get the current underlying price (FMP or Robinhood quotes) and the near-dated option chain (nearest weekly expiration; ~0-5 DTE). Collect strikes, gamma, open interest, volume, bid/ask, and IV via the Robinhood option tools (get_option_chains, get_option_instruments, get_option_quotes). Use get_option_instruments to obtain the option_id UUIDs needed for the watchlist. If per-contract gamma is not returned by the connector, compute Black-Scholes gamma from spot, strike, IV, and time-to-expiry.
 3. Compute gamma levels per ticker: dealer gamma exposure per strike (GEX ≈ open_interest × gamma × 100 × spot, calls positive / puts negative). Identify:
    - the GAMMA PIN = strike with the largest absolute dealer gamma (price magnet),
-   - the GAMMA FLIP / zero-gamma level (regime boundary),
+   - the GAMMA FLIP / zero-gamma level (report only — see rule below),
    - the dominant positive-gamma CALL WALL and negative-gamma PUT WALL,
-   - whether spot is ABOVE the flip (positive-gamma / pinning regime) or BELOW it (negative-gamma / accelerant regime), and spot's distance from the pin.
-4. SELECTION RULE (regime-aware, distance-from-pin):
-   a. Rank all 7 names by how far spot sits from that name's gamma pin — larger distance = bigger expected move = higher priority.
-   b. Determine the direction of the play from the regime:
-      - POSITIVE gamma / spot ABOVE the flip (pinning): play REVERSION back toward the pin. Spot above the pin → buy a PUT; spot below the pin → buy a CALL. Target strike near the pin.
-      - NEGATIVE gamma / spot BELOW the flip (accelerant): play CONTINUATION away from the pin, in the direction spot is already moving. Upward momentum → buy a CALL; downward momentum → buy a PUT.
-   c. From the top-ranked names, choose the 2-3 best single-leg contracts, preferring liquid contracts (tight spread, healthy OI/volume) and expirations consistent with a same-day-to-few-day horizon. Record each chosen contract's option_id.
+   - the gamma regime (positive-gamma-pinning if spot is above the flip, negative-gamma-accelerant if below) — RECORD THIS FOR THE REPORT ONLY.
+4. SELECTION RULE — ALWAYS PLAY TOWARD THE PIN:
+   a. Rank all 7 names by how far spot sits from that name's gamma pin, as a percentage. Largest distance = biggest expected move = highest priority.
+   b. Direction is ALWAYS toward the pin, for EVERY name, REGARDLESS of the gamma regime. Do not use the regime to flip direction. Do not ever select a continuation/away-from-pin play.
+      - Spot BELOW the pin → buy a CALL (the pin is the upside target).
+      - Spot ABOVE the pin → buy a PUT (the pin is the downside target).
+   c. Strike: use the pin strike itself, or the nearest liquid strike to it.
+   d. From the top-ranked names, pick the 2-3 best contracts, preferring liquid contracts (tight spread, healthy OI/volume).
 5. Refresh the options watchlist:
-   a. Read last_option_ids.json. If it exists, remove those option_ids via remove_option_from_watchlist (position_type "long"). If it does not exist, remove nothing — never remove contracts this task did not add.
+   a. Call get_option_watchlist. Remove any single-leg contract on a Mag 7 ticker with a near-dated (~0-7 DTE) expiration via remove_option_from_watchlist (position_type "long") — these are the routine's prior picks. Leave any non-Mag7 or longer-dated contracts (e.g. SPXW) untouched.
    b. Add today's selected option_ids via add_option_to_watchlist (position_type "long").
-   c. Overwrite last_option_ids.json with today's selected option_ids.
-6. Report a concise summary: for each of the 7 names give gamma pin / flip / call wall / put wall, spot's position and regime; then list each of today's 2-3 picks with contract (ticker, strike, expiry, call/put), entry quote, distance from pin, and the one-line rationale (regime + reversion-to-pin vs continuation-away).
+6. Report: for each of the 7 names give spot / pin / flip / call wall / put wall / regime / % distance from pin. Then list each of today's 2-3 picks with contract (ticker, strike, expiry, call/put), entry quote (mid), OI, volume, % distance from pin, and the regime it occurred in. Every pick must be a toward-the-pin play — state the pin target for each.
 
 CONSTRAINTS
-- NEVER place, review, or modify any order (do not call place_option_order or any order tool). Watchlist writes only.
-- The watchlist should reflect only today's 2-3 gamma picks plus whatever the user manually keeps — only remove what this task added on the previous run (via the state file).
+- NEVER place, review, or modify any order. Watchlist writes only.
+- Direction is ALWAYS toward the pin. The gamma regime is recorded as data but must NEVER change the direction of the trade.
+- Only touch near-dated Mag 7 single-leg contracts when refreshing; never remove the user's other watchlist items.
 - Keep this exact methodology consistent day to day so picks are comparable over time.

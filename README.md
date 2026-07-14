@@ -1,11 +1,14 @@
 # MAG7_GEX — Daily Mag 7 Gamma-Exposure Watchlist Bot
 
 Scans dealer gamma exposure (GEX) across the Magnificent 7 every trading morning,
-picks the 2–3 best single-leg option plays using a regime-aware, distance-from-pin
-rule, and refreshes them onto the Robinhood options watchlist. **Watchlist-only — it
-never places trades.**
+picks the 2–3 best single-leg option plays that target a move **toward the gamma pin**,
+and refreshes them onto the Robinhood options watchlist. **Watchlist-only — it never
+places trades.**
 
 Mag 7: **AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA**
+
+Runs as a **cloud Routine** in the Claude app, with the **Robinhood** and **FMP**
+connectors attached.
 
 ---
 
@@ -14,32 +17,47 @@ Mag 7: **AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA**
 | | |
 |---|---|
 | **When** | Weekdays (Mon–Fri) |
-| **Time** | 8:00 AM local  (= 10:00 AM ET on Mountain Time — ~30 min after the open) |
-| **Cron** | `0 8 * * 1-5` |
+| **Time** | 10:00 AM ET — ~30 min after the open |
+| **Cron** | `0 10 * * 1-5` (timezone: Eastern) |
 | **Frequency** | Once per trading day |
 
-> Cron runs in the machine's **local** timezone. `0 8 * * 1-5` = 10am ET only if the
-> machine is on Mountain Time. On a different zone, change the hour so it lands at
-> 10am ET (e.g. Pacific → `0 7 * * 1-5`, Central → `0 9 * * 1-5`, Eastern → `0 10 * * 1-5`).
+10:00 ET is chosen deliberately: the opening rotation (9:30–9:45) has cleared, spreads
+have tightened, and spot has revealed where it's sitting relative to the gamma levels —
+but it's still early enough to be in front of the day's move.
+
+See `schedule.txt` for timezone conversions.
 
 ---
 
-## The strategy (regime-aware, distance-from-pin)
+## The strategy — always toward the pin
 
-1. **Pin** = strike with the largest absolute dealer gamma (price magnet).
-2. **Flip** = zero-gamma level; it splits the two regimes.
-3. **Rank** all 7 names by how far spot sits from its pin — bigger distance = bigger
-   expected move = higher priority.
-4. **Direction depends on the regime:**
-   - **Positive gamma / spot ABOVE the flip (pinning):** play **reversion toward the pin**.
-     Spot above pin → buy a **PUT**; spot below pin → buy a **CALL**.
-   - **Negative gamma / spot BELOW the flip (accelerant):** play **continuation away from
-     the pin**, with the momentum. Up → **CALL**; down → **PUT**.
-5. Pick the 2–3 best liquid contracts (tight spread, healthy OI/volume), ~0–5 DTE.
-6. **Refresh:** remove yesterday's picks (tracked in `state/last_option_ids.json`, so it
-   never touches contracts you added yourself) and add today's.
+1. **Pin** = strike with the largest absolute dealer gamma (the price magnet).
+2. **Rank** all 7 names by how far spot sits from its pin (%). Bigger distance =
+   bigger expected move = higher priority.
+3. **Direction is always toward the pin**, for every name, regardless of gamma regime:
+   - Spot **below** the pin → buy a **CALL** (pin is the upside target)
+   - Spot **above** the pin → buy a **PUT** (pin is the downside target)
+4. **Strike** = the pin strike (or nearest liquid strike to it), ~0–5 DTE, liquid only.
+5. **Refresh:** clear the prior day's near-dated Mag 7 picks, add today's 2–3. Non-Mag7
+   and longer-dated contracts (e.g. SPXW) are left untouched.
 
 `GEX ≈ open_interest × gamma × 100 × spot`  (calls positive, puts negative)
+
+### On the gamma regime
+The **flip** (zero-gamma level) is still computed and **reported** — positive-gamma-pinning
+above it, negative-gamma-accelerant below — but it is **recorded as data only**. It does
+**not** change trade direction. This keeps the methodology constant day to day, so the
+regime column can later be used to test whether pin-reversion pays better in one regime
+than the other.
+
+> Earlier versions used a regime-aware rule that played *continuation away* from the pin
+> in negative gamma. That was removed — direction is now unconditional.
+
+### Known limitations
+- The call-positive / put-negative sign convention assumes dealers are long calls and
+  short puts. It's the industry-standard proxy, not a measurement of real inventory.
+- Single-name OI is far thinner than index OI, so the regime read is noisier than SPX.
+- Open interest updates once each morning, so intraday it is slightly stale.
 
 ---
 
@@ -47,30 +65,21 @@ Mag 7: **AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA**
 
 | File | What it is |
 |---|---|
-| `SKILL.md` | Drop-in scheduled-task file (frontmatter + full prompt). |
-| `prompt.md` | Just the task prompt, for pasting into a new scheduled task. |
+| `prompt.md` | The routine Instructions — paste into the Routine's Instructions box. |
+| `SKILL.md` | Same prompt with frontmatter (name, schedule, connectors). |
 | `schedule.txt` | Cron string + timezone conversions. |
 | `README.md` | This file. |
 
 ---
 
-## How to make it run automatically
+## Setup
 
-The bot runs inside the **Claude app's scheduled-tasks system** — it needs the app open
-and the **Robinhood** + **Massive Market Data** connectors authorized. GitHub is for
-version control / backup / portability; GitHub itself does **not** execute the task
-(it has no access to your brokerage connectors).
+1. Claude app → **Routines** → **New routine**.
+2. **Name:** `MAG7 GEX — daily gamma watchlist`
+3. **Instructions:** paste the contents of `prompt.md`.
+4. **Trigger → Schedule:** `0 10 * * 1-5`, timezone **Eastern**.
+5. **Connectors:** attach **Robinhood** and **FMP**.
+6. Save, then **Run now** once to verify the picks look right.
 
-**To install on any machine running the Claude app:**
-
-1. Copy `SKILL.md` into a folder named `gamma-daily` under your scheduled-tasks dir:
-   ```
-   ~/.claude/scheduled-tasks/gamma-daily/SKILL.md
-   ```
-2. Or just tell Claude: *"Create a scheduled task from the prompt in prompt.md, cron `0 8 * * 1-5`."*
-3. Open the **Scheduled** section in the sidebar, click **Run now** once to pre-approve
-   the market-data and watchlist tools (otherwise the first real run pauses on prompts).
-4. Adjust the cron hour for your timezone if you're not on Mountain Time (see above).
-
-> Scheduled tasks fire only while the Claude app is open. If it's closed when a run is
-> due, it runs on next launch.
+> GitHub stores this for version control and portability — it does **not** execute the
+> routine. Execution happens in the Claude app, which holds the brokerage connectors.

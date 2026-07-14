@@ -1,24 +1,27 @@
 MAG7_GEX — SCHEDULE
 ===================
 
-Cron (5-field, LOCAL time):   0 8 * * 1-5
-Meaning:                      8:00 AM, Monday through Friday
-Frequency:                    once per trading day
+Cron:        0 10 * * 1-5      (timezone: Eastern)
+Meaning:     10:00 AM ET, Monday through Friday
+Frequency:   once per trading day
 
-Target: 10:00 AM ET (~30 min after the 9:30 ET open).
-Cron runs in the machine's LOCAL timezone, so set the hour to hit 10am ET:
+Why 10:00 ET: ~30 min after the 9:30 open. The opening rotation has cleared,
+spreads have tightened, and spot has settled relative to the gamma levels --
+but it's still early enough to be in front of the day's move. Do not run
+earlier than 10:00 ET; pre-market has no usable option quotes.
 
-  Timezone        Cron            Local time
-  --------        ----            ----------
-  Eastern  (ET)   0 10 * * 1-5    10:00 AM
-  Central  (CT)   0 9  * * 1-5     9:00 AM
-  Mountain (MT)   0 8  * * 1-5     8:00 AM   <-- current setting
-  Pacific  (PT)   0 7  * * 1-5     7:00 AM
+If the schedule picker uses a different timezone, set the hour so it lands at 10am ET:
 
-Note: the app applies a small deterministic dispatch delay (a few minutes),
-so runs may fire a couple minutes after the top of the hour.
+  Timezone        Cron              Local time
+  --------        ----              ----------
+  Eastern  (ET)   0 10 * * 1-5      10:00 AM
+  Central  (CT)   0 9  * * 1-5       9:00 AM
+  Mountain (MT)   0 8  * * 1-5       8:00 AM
+  Pacific  (PT)   0 7  * * 1-5       7:00 AM
+  UTC (EDT, Mar-Nov)  0 14 * * 1-5  14:00
+  UTC (EST, Nov-Mar)  0 15 * * 1-5  15:00
 
 Notes:
-- Runs only while the Claude app is open; if closed at run time, fires on next launch.
-- Weekends are skipped by the cron (1-5 = Mon-Fri); market holidays are skipped by
-  the task's own trading-day check.
+- Weekends are skipped by the cron (1-5 = Mon-Fri).
+- Market holidays are skipped by the routine's own trading-day check.
+- The app may apply a small dispatch delay (a few minutes) at the top of the hour.
