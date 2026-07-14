@@ -37,7 +37,13 @@ See `schedule.txt` for timezone conversions.
 3. **Direction is always toward the pin**, for every name, regardless of gamma regime:
    - Spot **below** the pin → buy a **CALL** (pin is the upside target)
    - Spot **above** the pin → buy a **PUT** (pin is the downside target)
-4. **Strike** = the pin strike (or nearest liquid strike to it), ~0–5 DTE, liquid only.
+4. **Strike = 1 strike OTM from spot**, in the direction of the pin — **never the pin strike**.
+   The pin is the *momentum target*, not the strike to buy. The 1-OTM strike sits between
+   spot and the pin, so the move toward the pin carries it **in the money**; the pin strike
+   would only pay if price fully reached the pin.
+   - Spot $95, pin $100, $2.50 increments → buy the **$97.50 call** (not the $100 call)
+   - Guard: skip a name if its pin is less than 2 strike increments from spot.
+   - ~0–5 DTE, liquid contracts only.
 5. **Refresh:** clear the prior day's near-dated Mag 7 picks, add today's 2–3. Non-Mag7
    and longer-dated contracts (e.g. SPXW) are left untouched.
 
