@@ -1,0 +1,24 @@
+MAG7_GEX — SCHEDULE
+===================
+
+Cron (5-field, LOCAL time):   0 8 * * 1-5
+Meaning:                      8:00 AM, Monday through Friday
+Frequency:                    once per trading day
+
+Target: 10:00 AM ET (~30 min after the 9:30 ET open).
+Cron runs in the machine's LOCAL timezone, so set the hour to hit 10am ET:
+
+  Timezone        Cron            Local time
+  --------        ----            ----------
+  Eastern  (ET)   0 10 * * 1-5    10:00 AM
+  Central  (CT)   0 9  * * 1-5     9:00 AM
+  Mountain (MT)   0 8  * * 1-5     8:00 AM   <-- current setting
+  Pacific  (PT)   0 7  * * 1-5     7:00 AM
+
+Note: the app applies a small deterministic dispatch delay (a few minutes),
+so runs may fire a couple minutes after the top of the hour.
+
+Notes:
+- Runs only while the Claude app is open; if closed at run time, fires on next launch.
+- Weekends are skipped by the cron (1-5 = Mon-Fri); market holidays are skipped by
+  the task's own trading-day check.
